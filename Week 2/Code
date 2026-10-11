@@ -1,0 +1,70 @@
+const int segmentA = 3;
+const int segmentB = 2;
+const int segmentC = 8;
+const int segmentD = 7;
+const int segmentE = 6;
+const int segmentF = 4;
+const int segmentG = 5;
+const int button_1 = 9;
+const int button_2 = 10;
+
+int count = 0;
+int num_array[10][7] = {
+{0, 0, 0, 0, 0, 0, 1},//0
+{1, 0, 0, 1, 1, 1, 1},//1
+{0, 0, 1, 0, 0, 1, 0},//2
+{0, 0, 0, 0, 1, 1, 0},//3
+{1, 0, 0, 1, 1, 0, 0},//4
+{0, 1, 0, 0, 1, 0, 0},//5
+{0, 1, 0, 0, 0, 0, 0},//6
+{0, 0, 0, 1, 1, 1, 1},//7
+{0, 0, 0, 0, 0, 0, 0},//8
+{0, 0, 0, 0, 1, 0, 0}//9
+
+};
+void setup() {
+pinMode(segmentA, OUTPUT);
+pinMode(segmentB, OUTPUT);
+pinMode(segmentC, OUTPUT);
+pinMode(segmentD, OUTPUT);
+pinMode(segmentE, OUTPUT);
+pinMode(segmentF, OUTPUT);
+pinMode(segmentG, OUTPUT);
+pinMode(button_1, INPUT);
+pinMode(button_2, INPUT);
+display(num_array[count]);
+
+}
+void loop() {
+  if (digitalRead(button_1) == HIGH) {
+    if (count < 9) {
+      count++;
+    }
+  else {
+      count = 0;//number 0
+    }
+  display(num_array[count]);
+  while (digitalRead(button_1) == HIGH) {
+      delay(10);
+    }
+  delay(50);
+}
+
+else if (digitalRead(button_2) == HIGH) {
+count = 0;
+display(num_array[count]);
+while (digitalRead(button_2) == HIGH) {
+delay(10);
+}
+delay(50);
+}
+}
+void display(int bin[]) {
+digitalWrite(segmentA, bin[0]);
+digitalWrite(segmentB, bin[1]);
+digitalWrite(segmentC, bin[2]);
+digitalWrite(segmentD, bin[3]);
+digitalWrite(segmentE, bin[4]);
+digitalWrite(segmentF, bin[5]);
+digitalWrite(segmentG, bin[6]);
+}
