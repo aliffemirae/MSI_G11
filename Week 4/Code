@@ -1,0 +1,165 @@
+from collections import deque
+import time
+import matplotlib.pyplot as plt
+import numpy as np
+import serial
+
+# --- Configuration ---
+SERIAL_PORT = 'COM10'
+BAUD_RATE = 9600
+AUTHORIZED_CARDS = ['0013084287']
+SCALE = 1000 * 20
+GESTURE_TIMEOUT = 10.0  # Seconds allowed to perform circle
+
+ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)
+
+def check_circular_gesture(x_arr, y_arr):
+  """Evaluates whether the collected coordinates form a complete circular pattern."""
+  if len(x_arr) < 16:
+    return False, 0, 0
+
+  x = np.array(x_arr)
+  y = np.array(y_arr)
+
+  cx, cy = np.mean(x), np.mean(y)
+
+  span_x = np.max(x) - np.min(x)
+  span_y = np.max(y) - np.min(y)
+
+  # Check minimum amplitude threshold
+  if span_x < SCALE or span_y < SCALE:
+    return False, cx, cy
+
+  # Check quadrant traversal
+  dx = x - cx
+  dy = y - cy
+  q1 = np.any((dx > 0) & (dy > 0))
+  q2 = np.any((dx < 0) & (dy > 0))
+  q3 = np.any((dx < 0) & (dy < 0))
+  q4 = np.any((dx > 0) & (dy < 0))
+
+  if not (q1 and q2 and q3 and q4):
+    return False, cx, cy
+
+  # Check radial variance
+  radii = np.sqrt(dx**2 + dy**2)
+  mean_radius = np.mean(radii)
+  std_radius = np.std(radii)
+
+  is_circle = (std_radius / mean_radius) < 0.45
+  return bool(is_circle), cx, cy
+
+
+def detect_circular_motion(ser, duration=GESTURE_TIMEOUT):
+  """Opens a live tracking window, reads MPU6050 data from serial,
+
+  plots the path, and verifies if a circle was completed.
+  """
+  print(f"\n[MOTION] Perform circular motion now ({duration}s window)...")
+
+  # Flush stale accelerometer readings from the buffer
+  ser.reset_input_buffer()
+
+  timestamps = deque()
+  x_vals = deque()
+  y_vals = deque()
+
+  # Set up live plot
+  plt.ion()
+  fig, ax = plt.subplots(figsize=(5, 5))
+  ax.set_title("Perform Circular Gesture Now")
+  ax.set_xlim(-SCALE / 2, SCALE + 5000)
+  ax.set_ylim(-SCALE / 2, SCALE + 5000)
+  (line,) = ax.plot([], [], color='red', lw=2)
+  plt.show()
+
+  start_time = time.time()
+  gesture_passed = False
+
+  while (time.time() - start_time) < duration:
+    # 1. Read all waiting MPU6050 data packets
+    while ser.in_waiting > 0:
+      try:
+        raw_line = ser.readline().decode('utf-8', errors='ignore').strip()
+        if raw_line:
+          parts = raw_line.split(',')
+          if len(parts) >= 2:
+            ax_val = int(parts[0])
+            ay_val = int(parts[1])
+
+            timestamps.append(time.time())
+            x_vals.append(ax_val)
+            y_vals.append(ay_val)
+      except (ValueError, UnicodeDecodeError):
+        pass
+
+    # 2. Retain points within the rolling 2.5-second gesture window
+    now = time.time()
+    while timestamps and (now - timestamps[0]) > 1.5:
+      timestamps.popleft()
+      x_vals.popleft()
+      y_vals.popleft()
+
+    # 3. Update trajectory plot
+    if x_vals:
+      line.set_data(list(x_vals), list(y_vals))
+      ax.relim()
+      fig.canvas.flush_events()
+
+    # 4. Check circle geometry
+    is_circle, _, _ = check_circular_gesture(x_vals, y_vals)
+    if is_circle:
+      print(">> Circular gesture verified!")
+      gesture_passed = True
+      break
+
+    plt.pause(0.01)
+
+  plt.close(fig)
+  return gesture_passed
+
+
+def main():
+  try:
+
+    time.sleep(2)  # Wait for Arduino bootloader to settle
+    print(f"Connected to Arduino on {SERIAL_PORT}")
+  except serial.SerialException as e:
+    print(f"Serial Connection Error: {e}")
+    return
+
+  print("\n================ SYSTEM READY ================")
+  print("Tap your RFID card on the USB Dongle...")
+
+  try:
+    while True:
+      # Block until the USB Dongle types the card UID and sends Enter
+      scanned_uid = input("\n[RFID] Tap Card: ").strip().upper()
+      if not scanned_uid:
+        continue
+
+      print(f"Scanned UID: {scanned_uid}")
+
+      if scanned_uid in AUTHORIZED_CARDS:
+        print("RFID Authorized. Prepare for gesture...")
+        time.sleep(1)
+
+        if detect_circular_motion(ser):
+          print(">> Access Granted: Green LED ON, Servo Unlocking.")
+          ser.write(b'A')
+        else:
+          print(">> Motion Verification Failed: Red LED ON.")
+          ser.write(b'D')
+      else:
+        print(">> Unauthorized UID: Access Denied. Red LED ON.")
+        ser.write(b'D')
+
+  except KeyboardInterrupt:
+    print("\nProgram terminated by user.")
+  finally:
+    if ser.is_open:
+      ser.close()
+
+
+if __name__ == '__main__':
+  main()
